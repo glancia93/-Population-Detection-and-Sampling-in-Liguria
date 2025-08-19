@@ -1,0 +1,140 @@
+
+//DESIGN WEIGTHS  w_kq
+calculate and store w_kq as a list of lists Q x nq,
+for each frame q and for all k contained in s_q
+each element is the inverse of the first-order inclusion probabilities \pi_kq
+
+
+
+// UNIT MULTIPLICITY
+calculate and store m_kq as a list of lists Q x nq,
+for each frame q and for all k contained in s_q
+each element equal to the corresponding value m_kq calculated on the population
+
+
+//DOMAIN MULTIPLICITY
+// Domain Multiplicity
+md = sum of the rows of dBinary
+
+
+// \alpha(u) SIMPLE MULTIPLICITY ADJUSTMENT
+for each frame q and for each unit k included in s_q
+calculate and store the list of lists \alpha(u)_kq where each element is the inverse of m_kq
+
+
+// SIMPLE MULTIPLICITY ESTIMATOR
+calculate and store the value
+\hat Y_{SM}} equal to the sum for each frame q and for all units k contained in s_q of the following terms
+    y_kq * \alpha(u)_kq * w_kq
+
+
+
+// PML (PSEUDO MAX LIKELIHOOD) ESTIMATOR (MORE EFFICIENT, HIGHLY PERFORMANT AMONG THE  MAIN MF EFFICIENT ESTIMATORS SO FAR)
+
+
+//
+calculate and store Nhat_q, list of size Q, for each frame q
+sum for all k contained in s_q of w_kq 
+
+//
+for each g corresponding to d|q calculate
+    the sum for all k included in the domain sample s_d|q of w_kq ;
+store in the list Nhat_d|q of 12 elements
+calculate and store Nhat_g = Nhat_d|q
+
+
+// PML begin
+
+//
+calculate and store the matrix Hhat_d|q of size D x Q by copying the dBinary matrix
+then for each index g and the corresponding pair (d,q)
+    assign Hhat_d|q = Nhat_g
+
+//
+NPML0, vector of size D, the d-th element is the element Hhat_d|q where, for the same d,
+q corresponds to the largest of the domain sample size n_d|q
+
+use the following Python pseudo-code to:
+1. calculate the vector Ncheck_d
+2. store it in the vector NPML_d of size D
+
+<python>
+
+####################################################################################
+#   Iterative routine Lohr & Rao - JASA 2006                                       #
+#   NPML0 for the same d corresponds to the estimate with the maximum domain size n_d|q  #
+####################################################################################
+
+Mplus = scipy.linalg.pinv(dBinary)
+fdeff = [
+    nq[q] / Nq[q] / deff[q]
+    for q in range(Q)
+    ]
+Hhatdq = Hhat_d|q
+Ncheck_d0 = NPML0
+
+#
+def A(x):
+    A1 = ( np.identity(D) - dBinary @ Mplus ) @ scipy.linalg.inv(np.diag(x)) @ np.diag(dBinary @ fdeff)
+    A2 = dBinary.T
+    return np.concatenate((A1,A2))
+
+#
+def b(x):
+    b1 = ( np.identity(D) - dBinary @ Mplus ) @ scipy.linalg.inv(np.diag(x)) @ Hhatdq @ fdeff
+    b2 = np.array(Nq)
+    return np.concatenate((b1,b2))
+
+#
+Ncheck_d = np.zeros(D)
+x_old = np.array(Ncheck_d0)
+for _ in range(25):
+    x_new = np.linalg.pinv(A(x_old)) @ b(x_old)
+    if np.allclose(x_old, x_new): break
+    x_old = x_new
+Ncheck_d = x_new
+
+</python>
+
+// PML weights
+for each sample domain s_d|q
+and for all k included in s_d|q
+1. calculate NPML_d * w_kq / Nhat_d|q
+2. store in the list of lists wPML_kd|q 
+
+//
+for each index g corresponding to d|q 
+1. calculate the sum for all k included in s_d|q of the terms y_kq * wPML_kd|q
+2. store in the list t_ywPML_g 
+
+// PML alpha
+for each index g and the corresponding d|q 
+calculate and store the list pPML_g
+with elements calculated as follows:
+
+if md == 1 you will find a d|q 
+    for g corresponding to d|q pPML_g = 1
+
+if md == 2 you will find a d|q and a d|q' with q' > q
+    for g corresponding to d|q pPML_g = ( fdeff * Nhat_d|q ) / ( fdeff * Nhat_d|q + fdeff' * Nhat_d|q' )
+    for g' corresponding to d|q' pPML_g' = 1 - pPML_g
+
+if md == 3 you will find
+    a g corresponding to d|q
+    a g' corresponding to d|(q+1) and
+    a g'' corresponding to d|(q+2)
+    calculate pPML_g = ( fdeff * Nhat_d|q ) / ( fdeff * Nhat_d|q + fdeff(q+1) * Nhat_d|(q+1) + fdeff(q+2) * Nhat_d|(q+2) )
+            pPML_g' = ( fdeff(q+1) * Nhat_d|(q+1) ) / ( fdeff * Nhat_d|q + fdeff(q+1) * Nhat_d|(q+1) + fdeff(q+2) * Nhat_d|(q+2) )
+            pPML_g'' = 1 - (pPML_g + pPML_g') 
+
+//
+pPML_g will also be indicated as \alpha_g(pPML)
+
+//PML ESTIMATE
+calculate and store the value
+\hatY_{PML} = summing for all indices g
+    \alpha_g(pPML) * t_ywPML_g 
+
+// PML end
+
+

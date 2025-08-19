@@ -1,0 +1,142 @@
+// Number of frames
+Q = 3
+
+// Domain indicator
+D = 2^Q-1
+d = [ integers from 1 to D ]
+
+// Frame indicator
+q = [ integers from 1 to Q ]
+
+//
+dBinary is a 2^Q-1 x Q matrix of {0,1} numbers
+which contains in each row (from 1 to D)
+the binary representation of the row index
+reordering the columns from last to first
+for example, if Q=3
+[
+    [1,0,0],
+    [0,1,0],
+    [1,1,0],
+    ...
+]
+
+//
+We will call "d included in q" all domains d for which the element dBinary[d,q] = 1)
+
+// Domain Multiplicity
+md = sum of the rows of dBinary
+
+// Population size 
+N = 50000
+
+// Number of simulation runs
+Nrun = 2
+The simulations will concern only the sampling,
+the population must remain the same once generated.
+
+//Generating U
+my=100, mx=400
+sy=9, sx=4
+royx=0.85
+mean = [ my, mx ]
+cov = [
+    [ sy**2, royx*sy*sx ],
+    [ royx*sy*sx, sx**2 ],
+]
+
+//
+random seed 42
+
+//
+create a population of size N containing the labels k with k from 1 to N
+
+//
+generate the N population data y_k and x_k for k from 1 to N
+from a bivariate normal random variable with mean vector "mean" and variance-covariance matrix "cov"
+ensure that all values are positive: reject and regenerate the pair y_k and x_k if at least one value is negative
+check that the mean of y is "about" μy
+check that the mean of x is "about" μx
+after generating all pairs of values, divide all population data by 100
+
+//Controlling the frame overlap by choosing the % of unit k included into the disjoint domains
+define Nd_pct = np.array([ 0.3, 0.1, 0.1, 0.2, 0.1, 0.1, 0.1 ]) and check that the sum is 1
+calculate Nd = round(Nd_pct * N)
+correct any rounding errors to ensure that the sum is exactly N
+
+//
+calculate and store Nq, a list with Q elements, sum of Nd for all d included in q
+
+// "Domains"
+you must allocate the N population labels into the D domains according to:
+    1) the domain sizes contained in Nd
+    2) labeling them so as to recognize them as original k
+    3) thus produce a list of lists "domains" with size D x Nd
+       in which you can establish a one-to-one relationship
+       between the [y_k, x_k] values of the population and the same labeled data classified in the domains
+    4) ensure that the union of the domains reproduces the population, guaranteeing that the domains do NOT have intersections
+    5) proceed with a sequential assignment, after performing a single shuffle of the units k in the population
+       [***] taking the first Nd1 elements for domain 1, the next Nd2 elements for domain 2, and so on
+
+// "Frame"
+you must aggregate the labels of the "domains" list of lists into the Q frames according to:
+    1) for each q, the domains d included in q
+    2) the frame sizes contained in Nq
+    3) labeling them so as to recognize them as original k
+    4) thus produce a list of lists "frames" with size Q x Nq
+       in which you can establish a one-to-one relationship
+       between the [y_k, x_k] values of the population and the same labeled data classified in the frames
+    5) ensure that the intersections of the frames reproduce the D domains
+
+//
+we will denote by x_kq and y_kq the population data included in each frame q
+the data x_kq and y_kq are in a one-to-one relationship, according to your labeling,
+with the original population data and with the data classified in the domains.
+for example, the index k of the original y_k data you assigned to domain d=7
+will also appear in all frames q=[1,2,3] but with its own label
+
+//
+calculate and store the lists of lists x_kq and y_kq
+
+// Population Totals
+calculate T_y = sum of the population data y_k
+calculate T_x = sum of the population data x_k
+for each domain d, calculate the sum for all k included in d of y_k and store
+    in the list T_{yd} of size D
+for each domain d, calculate the sum for all k included in d of x_k and store
+    in the list T_{xd} of size D
+
+//
+for each frame q and for each k contained in q
+define: multiplicity of k included in q (unit multiplicity) =
+    md if k belongs to d included in q
+calculate and store m_kq as a list of lists containing unit multiplicity with size Q x Nq
+
+check that all k belonging to the same domain d included in q
+    have the same multiplicity m_kq = md.
+
+prepare the domain_kd matrix of size N x D (units x domains), which is 1 if k belongs to d, 0 otherwise
+
+definition of d_kq: d_kq = 1 if unit k belongs to frame q, otherwise 0.
+
+//
+we define the relation d|q (or index g=d|q)
+the list of pairs of indices (d,q)
+such that domain d is included in frame q (use dBinary to decide if d is included in q)
+the indices must be ordered first with respect to d and then with respect to q
+for example, if Q=3 we have g=d|q going from 1 to 12,
+                  g=3 corresponds to d=3 q=1
+                  while d=4 q=1 has no corresponding index g because d=4 is not contained in q=1
+
+//
+build the list g_list in which to store the triples (g,d,q)
+with g = 1..12, d = 1..D, q = 1..Q
+such that domain d is included in frame q (use dBinary to decide if d is included in q)
+this list must be ordered first with respect to d and then with respect to q
+
+//
+define sample_design = [ "srs", "sampford", "sampford" ]
+define fq = [ 0.05, 0.05, 0.05 ] (list of size Q)
+
+//
+calculate nq = Nq * fq rounded up to the nearest integer (list of size Q)

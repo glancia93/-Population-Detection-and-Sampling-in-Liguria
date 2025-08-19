@@ -1,0 +1,83 @@
+//
+The following is Python pseudo-code to be used for each frame q:
+    - to draw a random sample
+    - to calculate the first-order inclusion probabilities
+    - to calculate the first-order inclusion probabilities for the sampled units only
+    - to calculate the second-order inclusion probabilities for the sampled units only
+
+These are the adaptations to be made:
+    N = population size
+    x = x_kq
+    n = nq sample size
+
+<python>
+# see notebook on colab MF // Rao-Sampford.ipynb
+
+from .sampling import Sampling
+
+# example for sample_design = "srs"
+sampling = Sampling.Make("srs", N=N, n=n)
+    
+# example for sample_design = "pareto"
+sampling = Sampling.Make("pareto", x=x, n=n)
+
+# example for sample_design = "sampford"
+sampling = Sampling.Make("sampford", x=x, n=n)
+
+# usage of calculation object:
+    1. draw a random sample according to the sampling design
+        sample, rejects = sampling.get_sample(seed)
+    2. calculate the first-order inclusion probabilities
+        πi = sampling.get_πi()
+    3. calculate the first-order inclusion probabilities for the sampled units only
+        πi_sample = sampling.get_πi_sample(sample)
+    4. calculate the second-order inclusion probabilities for the sampled units only
+        πij_sample = sampling.get_πij_sample(sample)
+</python>
+
+//
+calculate and store a list of lists \pi_kq_pop of first-order inclusion probabilities
+    for each frame q and for each k included in q according to the rules just given
+
+//
+calculate and store a list of lists \pi_kq of first-order inclusion probabilities
+    for each frame q and for each k included in the sample of q according to the rules just given
+
+//
+select the random sample from each frame q using:
+    1) random seed 42 (+ progressive sample if Nrun > 1)
+    2) the sample design according to sample_design
+    3) the sample sizes according to nq[q]
+    4) store in s_q (list of lists Q x nq) the units k sampled in frame q
+
+//
+calculate and store a list of matrices \pi_klq of second-order inclusion probabilities
+    for each frame q and for each k included in the sample according to the rules just given
+
+//
+calculate and store the list of lists s_d|q by classifying s_q according to the d|q relation
+the domain sample s_d|q will also be indicated as s_g with g indicating the corresponding d|q
+for example when Q=3
+    if g=1 d|q = 1|1 so s_1 = s_1|1
+    if g=7 d|q = 5|3 so s_7 = s_5|3   
+    if g=9 d|q = 6|3 so s_9 = s_6|3   
+and so on for all g and for all d|q 
+
+//
+calculate and store in the list n_d|q the sizes of the sub-samples (domain sample) s_d|q
+
+//
+when I say "for all units k contained in s_q" for a particular frame q
+you must scan the units k in this way:
+    for i,idx in enumerate(s_q[q]):
+        # idx is an index relative to frame q, but only of the sampled units
+        pass
+
+//
+when I say "for all units k included in the domain sample s_d|q"
+you must scan the units k in this way:
+    for g, (d, q) in enumerate(d_q):
+        idxs = s_dq[g]
+        # idxs are indices relative to frame q, but only of the sampled units
+        pass
+

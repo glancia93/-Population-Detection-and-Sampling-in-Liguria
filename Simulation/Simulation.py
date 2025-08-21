@@ -62,28 +62,19 @@ class Simulation:
             ],
             'random_seed': 6,
             'Nd_pct': [0.3, 0.1, 0.1, 0.2, 0.1, 0.1, 0.1],
-            'sample_design': ["srs", "sampford", "sampford"],
+            'sample_design': ["srs", "srs", "srs"],
             'fq': [0.05, 0.05, 0.05],
         }
 
         if self.allocation == "equal":
             D = 2**dict_of_params['Q']-1
             dict_of_params["Nd_pct"] = [1/D for kk in range(D)]
-        elif self.allocation == "optimal_cost":
-            cost = np.array([[4, 4, 32],
-                 [4, 4, 32], 
-                 [8, 4, 32],
-                 [4, 4, 16],
-                 [4, 4, 16],
-                 [8, 4, 16],
-                 [2, 4 ,32],
-                ])  # domain x frame costs
-            domain_totals = np.array([17, 24, 5, 12, 13, 14, 15])
-            frame_caps = np.array([100, 100, 100])  # optional
-
-            alloc = oca.allocate_frames_linear_cost(cost, domain_totals, frame_caps)
-            alloc = alloc.sum(axis= 1)/alloc.sum(axis= 1).sum()
-            dict_of_params["Nd_pct"] = alloc
+        elif self.allocation == "optimal_cost":            
+            #Use the optimal MF estimator for a linear cost function
+            cost = np.array([4, 4, 4, 4, 4, 4, 4]) # cost per domain
+            domain_totals = np.array([24, 17, 15, 14, 13, 12, 5])
+            alloc = (domain_totals*np.sqrt(cost))/(domain_totals*np.sqrt(cost)).sum()
+            dict_of_params["Nd_pct"] = alloc/alloc.sum()
         else:
             dict_of_params["Nd_pct"] = dict_of_params["Nd_pct"]
 

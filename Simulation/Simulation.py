@@ -4,6 +4,9 @@ from scipy.special import softmax
 from sampling import Sampling
 import optimal_cost_allocation as oca
 import sys
+from typing import List, Any
+import collections.abc
+
 
 class Simulation:
     """
@@ -15,7 +18,7 @@ class Simulation:
     - Estimation (SM, PML, NPML) following Lohr & Rao (2006, JASA).
     """
 
-    def __init__(self, params: dict = None, reproduce= True, allocation= None):
+    def __init__(self, params: dict = None, reproduce= True, allocation= None, strategy= None):
         """
         Initialize the simulation with default or user-specified parameters.
         
@@ -27,13 +30,20 @@ class Simulation:
 
         if allocation is None:
             self.allocation = None
-        elif allocation == "equal":
-            self.allocation = "equal"
+        elif allocation == "proportional":
+            self.allocation = "proportional"
         elif allocation == "optimal_cost":
             self.allocation = "optimal_cost"
         else:
-            ValueError("allocation must be either 'equal' or 'optimal_cost'")
-        
+            raise ValueError("allocation must be either 'proportional' or 'optimal_cost'")
+
+        if strategy is None:
+            self.strategy = "StS"
+        elif strategy in ["StS", "MFS"]:
+            self.strategy = strategy
+        else:
+            raise ValueError("strategy must be either 'StS' or 'MFS' ")
+            
         self.params = params if params is not None else self.get_parameters()
         self.reproduce= reproduce
         
@@ -48,7 +58,7 @@ class Simulation:
 
         dict_of_params = {
             'Q': 3,
-            'N': 1000,
+            'N': 3000,
             'Nrun': 2,
             'my': 100,
             'mx': 400,
@@ -62,7 +72,7 @@ class Simulation:
             ],
             'random_seed': 6,
             'Nd_pct': [0.3, 0.1, 0.1, 0.2, 0.1, 0.1, 0.1],
-            'sample_design': ["srs", "srs", "srs"],
+            'sample_design': ["pareto", "pareto", "pareto"],
             'fq': [0.05, 0.05, 0.05],
         }
 
@@ -70,11 +80,8 @@ class Simulation:
             D = 2**dict_of_params['Q']-1
             dict_of_params["Nd_pct"] = [1/D for kk in range(D)]
         elif self.allocation == "optimal_cost":            
-            #Use the optimal MF estimator for a linear cost function
-            cost = np.array([4, 4, 4, 4, 4, 4, 4]) # cost per domain
-            domain_totals = np.array([24, 17, 15, 14, 13, 12, 5])
-            alloc = (domain_totals*np.sqrt(cost))/(domain_totals*np.sqrt(cost)).sum()
-            dict_of_params["Nd_pct"] = alloc/alloc.sum()
+            #Use the optimal allocation for a linear cost function -- define the cost
+            self.cost_frame = np.array([9.5, 10, 10.5]) # cost per domain
         else:
             dict_of_params["Nd_pct"] = dict_of_params["Nd_pct"]
 
@@ -139,6 +146,7 @@ class Simulation:
         for iq in range(Q):
             mask = dBinary[:, iq] == 1
             Nq.append(sum([Nd[idom] for idom in range(D) if mask[idom]]))
+        
 
         # Frame membership
         frames = []
@@ -180,12 +188,27 @@ class Simulation:
                     g_list.append((g, idom+1, iq+1))
                     g += 1
 
+        # get the mutiplicity at unity level
+        m_units = np.zeros_like(y, dtype=int)
+        for idom, dom in enumerate(domains):
+            m_units[dom] = md[idom]
+
+        # weights = 1 / m
+        weights = 1.0 / m_units
+    
+        # weighted_mean
+        y_mean = np.sum(weights * y) / np.sum(weights)
+    
+        # variance adjusted by mutiplicity
+        var_w = np.sum(weights * (y - y_mean) ** 2) / np.sum(weights)
+
         return {
             'Q': Q, 'D': D, 'N': N, 'd': d, 'q': q, 'dBinary': dBinary, 'md': md,
             'y': y, 'x': x, 'domains': domains, 'frames': frames,
             'x_kq': x_kq, 'y_kq': y_kq, 'T_y': T_y, 'T_x': T_x,
             'T_yd': T_yd, 'T_xd': T_xd, 'Nq': Nq, 'Nd': Nd,
-            'm_kq': m_kq, 'domain_kd': domain_kd, 'g_list': g_list
+            'm_kq': m_kq, 'domain_kd': domain_kd, 'g_list': g_list,
+            'var_w' : var_w
         }
 
     def extract_sample(self, population):
@@ -204,7 +227,87 @@ class Simulation:
         """
         p, Q = self.params, population['Q']
         Nq, frames, x_kq, y_kq, m_kq_pop = population['Nq'], population['frames'], population['x_kq'], population['y_kq'], population['m_kq']
-        nq = [int(np.ceil(Nq[q] * p['fq'][q])) for q in range(Q)]
+
+        ### Determine the right Nq
+        N = population['N'] #use the same population size
+
+        ####################################################################################################
+        # Compute percentiles of x
+        p33 = np.percentile(population["x"], 33)
+        p66 = np.percentile(population["x"], 66)
+        # Select indices based on x’s percentile thresholds
+        below_33 = np.where(population["x"] < p33)[0]
+        between_33_66 = np.where((population["x"] >= p33) & (population["x"] < p66))[0]
+        above_66 = np.where(population["x"] >= p66)[0]
+        pop_idx = [below_33, between_33_66, above_66]
+        Nq = np.array([len(item) for item in pop_idx]) # get the total population per frame
+        #####################################################################################################
+
+        #===================================
+        #Corrupt variance
+        corruptor = lambda x, tau: x * np.exp(np.random.normal(0, tau, size=1))
+        tau_noise = .05 
+        
+        #-------------------------------------
+        # Extract the population by allocation
+        if self.allocation is None:
+            # Default: fractional allocation based on fq proportions
+            nq = [int(np.ceil(Nq[q] * p['fq'][q])) for q in range(Q)]
+
+        elif self.allocation == 'proportional':
+            # a fixed fraction across frames , fq = .2
+            fq = [0.2 for q in range(Q)]
+            nq = [int(np.ceil(Nq[q] * fq[q])) for q in range(Q)]
+
+            print("Proportional Allocation -- Extraction:")
+            print("nq -- Sample size per frame:", nq)
+            print("Sampling fraction per frame:", fq)
+            print("----------------------")
+
+        elif self.allocation == "optimal_cost":
+            y = population["y"]
+            yh = np.array([len(population["frames"]) for q in range(Q)])
+            
+            if self.strategy == "StS":
+                # Stratified sampling: allocate by variability (std dev) in each frame
+                sigma_q = np.array([np.std([y[i] for i in population["frames"][q]]) for q in range(Q)])
+                sigma_q = corruptor(sigma_q, tau= tau_noise)
+                fq = yh*sigma_q / np.sqrt(self.cost_frame)
+                fq = fq/fq.sum()
+                n_fixed = np.sum([int(np.ceil(Nq[q] * fq[q])) for q in range(Q)])
+                nq = [int(np.ceil(n_fixed * fq[q])) for q in range(Q)]
+
+                print("Optimal Cost Allocation -- Extraction Stratified Sampling:")
+                print("nq -- Sample size per frame:", nq)
+                print("Sampling fraction per frame:", fq)
+                print("----------------------")
+
+            elif self.strategy == "MFS":
+                # Multi-frame sampling: adjust std dev by multiplicity weights
+                sigma_q = []
+                for q in range(Q):
+                    yq = np.array([y[i] for i in population["frames"][q]])
+                    m_q = np.array(m_kq_pop[q])
+                    weighted_std = np.std(yq / m_q) / np.sum(1/m_q)
+                    sigma_q.append(weighted_std)
+                sigma_q = np.array(sigma_q)     
+                sigma_q = corruptor(sigma_q, tau= tau_noise)
+                
+                # Allocate proportionally to weighted variability, adjusted for costs
+                fq = Nq*sigma_q / np.sqrt(self.cost_frame)
+                fq = fq/fq.sum()
+                n_fixed = np.sum([int(np.ceil(Nq[q] * fq[q])) for q in range(Q)])
+                nq = [int(np.ceil(n_fixed * fq[q])) for q in range(Q)]
+
+                print("Optimal Cost Allocation -- Extraction Multi-Frame Sampling:")
+                print("nq -- Sample size per frame:", nq)
+                print("Sampling fraction per frame:", fq)
+                print("----------------------")
+
+
+        else:
+            raise ValueError("allocation not valid -- nq not defined")         
+            
         random_seed = p['random_seed']
         sample_designs = p['sample_design']
 
@@ -262,7 +365,7 @@ class Simulation:
             'pop': population
         }
 
-    def compute_estimates(self, sample):
+    def compute_estimates_mfs(self, sample):
         """
         Computes SM, PML, and NPML estimates from the drawn sample.
         
@@ -280,6 +383,7 @@ class Simulation:
         
         pop = sample['pop']
         Q = pop['Q']
+        N = pop['N']
         D = pop['D']
         dBinary = pop['dBinary']
         md = pop['md']
@@ -437,7 +541,113 @@ class Simulation:
             'wPML_kdq': wPML_kdq,
             't_ywPML_g': t_ywPML_g,
             'pPML_g': pPML_g,
-            'Y_PML': Y_PML
+            'Y_PML': Y_PML,
+            'mu_SM' : Y_SM/N,
+            'mu_PML' : Y_PML/N
+        }
+
+    def compute_estimates_sts(self, sample):
+        """
+        Computes stratified (by frame) estimates from a drawn sample.
+        
+        Assumes SRS-without-replacement within each stratum (frame).
+        
+        Returns:
+            - Total and mean estimates
+            - Variance estimates using Finite Population Correction (FPC)
+            - Standard errors
+            - Per-stratum statistics (ybar, s2, n, weights)
+        """
+
+        pop = sample['pop'] #use the same population as for the MFS
+        Q = pop['Q'] #use the same number of strata
+        N = pop['N'] #use the same population size
+
+        ##########
+        # Compute percentiles of x
+        p33 = np.percentile(pop["x"], 33)
+        p66 = np.percentile(pop["x"], 66)
+
+        # Select indices based on x’s percentile thresholds
+        below_33 = np.where(pop["x"] < p33)[0]
+        between_33_66 = np.where((pop["x"] >= p33) & (pop["x"] < p66))[0]
+        above_66 = np.where(pop["x"]>= p66)[0]
+        pop_idx = [below_33, between_33_66, above_66]
+        pi_kq = sample.get('pi_kq', None)     # inclusion probabilities (optional)
+        Nq = np.array([len(item) for item in pop_idx]) # get the total population per frame
+
+        if self.allocation == "proportional":
+
+            #allocate a fixed fraction of 20%
+            fq = .2
+            nq = np.ceil(Nq*fq)
+            # --- form strata ---
+            pop_idx_sample = [idx[0:int(nq[ii])] for ii, idx in enumerate(pop_idx)]
+            # === SUMMARY ===
+            print("Proportional Allocation:")
+            print("Nq -- Total per frame:", Nq)
+            print("nq -- Sample size per frame:", nq)
+            print("Sampling fraction per frame:", fq)
+            print("----------------------")
+
+        elif self.allocation == "optimal_cost":
+            # Stratified sampling: allocate by variability (std dev) in each frame
+            
+            sigma_q = np.array([np.std(pop['y'][pop_idx[kk]]) for kk in range(Q)]) #standard deviation of the populaiton
+            
+            population_size = np.sum(np.ceil(Nq*.2))
+            
+            #fixed costs as f = .2 (stratified case)
+
+            fq = Nq*sigma_q /np.sqrt(self.cost_frame) # frequency per frame
+            fq = fq/fq.sum() # normalize frequency (in case it were not completly normalized)
+            nq = np.array([int(np.ceil(population_size * fq[q])) for q in range(Q)]) # get the allocation per frame
+        
+
+            # --- Step 3: form strata ---
+            pop_idx_sample = [idx[0:nq[ii]] for ii, idx in enumerate(pop_idx)]
+
+            # === SUMMARY ===
+            print("Optimal Cost Allocation:")
+            print("Nq -- Total per frame:", Nq)
+            print("nq -- Sample size per frame:", nq)
+            print("Sampling fraction per frame:", fq)
+            print("----------------------")
+
+            
+
+        # Per-stratum means and unbiased variances
+        ybar_q = np.array([np.mean(pop['y'][pop_idx_sample[q]]) for q in range(Q)])
+        s2_q = np.array([np.var(pop['y'][pop_idx_sample[q]]) for q in range(Q)])
+        
+        # Stratified total and mean
+        Y_STS = float(np.sum(Nq * ybar_q))
+        mu_STS = Y_STS / N if N > 0 else 0.0
+    
+        # Variance of stratified total (with FPC)
+        fpc = np.where(Nq > 0, 1.0 - (nq / Nq), 0.0)
+        Var_Y_STS = np.sum((Nq**2) * fpc * s2_q/nq)
+        
+        # Variance and SE of mean estimator
+        Var_mu_STS = Var_Y_STS / (N**2) if N > 0 else 0.0
+        SE_Y_STS = np.sqrt(Var_Y_STS) if Var_Y_STS >= 0 else np.nan
+        SE_mu_STS = np.sqrt(Var_mu_STS) if Var_mu_STS >= 0 else np.nan
+
+        #Squared Error
+        SqERR = (np.sum(pop["y"])-Y_STS)**2
+    
+        return {
+            'Y_STS': Y_STS,
+            'mu_STS': mu_STS,
+            'Var_Y_STS': Var_Y_STS,
+            'Var_mu_STS': Var_mu_STS,
+            'SE_Y_STS': SE_Y_STS,
+            'SE_mu_STS': SE_mu_STS,
+            'ybar_q': ybar_q,
+            's2_q': s2_q,
+            'nq': nq,
+            'Nq': Nq,
+            'SqErr': SqERR  
         }
         
 
@@ -451,5 +661,21 @@ class Simulation:
         """
         pop = self.generate_population()
         sample = self.extract_sample(pop)
-        estimates = self.compute_estimates(sample)
+        if self.strategy == "StS":
+            estimates = self.compute_estimates_sts(sample)
+        elif self.strategy == "MFS":
+            estimates = self.compute_estimates_mfs(sample)
         return {'population': pop, 'sample': sample, 'estimates': estimates}
+
+
+
+###Util functions
+def random_partition(N, M):
+
+    """Make a random partitioion of N objects into M groups"""
+    
+    # choose M-1 cut points in range(1, N)
+    cuts = np.sort(np.random.binomial(range(1, N), M-1, replace=False))
+    # add boundaries at 0 and N
+    parts = np.diff([0] + cuts.tolist() + [N])
+    return parts

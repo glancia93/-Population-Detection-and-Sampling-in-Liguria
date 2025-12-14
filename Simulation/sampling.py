@@ -34,11 +34,16 @@ class Sampling():
         """
         Ritorna un oggetto di campionamento in base al valore "design"
         """
-        if dbg: print(f"Sampling.Make({design})")
-        match design:
-            case "srs": return SRS(N=N, n=n)
-            case "pareto": return Pareto(x=x, n=n)
-            case "sampford": return Sampford(x=x, n=n)
+        if dbg:
+            print(f"SamplingFactory.make({design})")
+
+        sampler_cls = cls._registry.get(design)
+        if sampler_cls is None:
+            raise ValueError(f"Unknown sampling design: {design!r}")
+
+        # Instantiate with only the supported args; adjust if constructors differ
+        return sampler_cls(N=N, n=n, x=x)
+
     #
     @cache
     def get_πi(self):

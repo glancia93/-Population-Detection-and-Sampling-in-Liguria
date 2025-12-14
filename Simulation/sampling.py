@@ -37,13 +37,14 @@ class Sampling():
         if dbg:
             print(f"SamplingFactory.make({design})")
 
-        sampler_cls = cls._registry.get(design)
-        if sampler_cls is None:
+        if design is None:
             raise ValueError(f"Unknown sampling design: {design!r}")
-
-        # Instantiate with only the supported args; adjust if constructors differ
-        return sampler_cls(N=N, n=n, x=x)
-
+        elif design == "SRS":
+            return SRS(N= N, n= n)
+        elif design == "pareto":
+            return Pareto(x=x,n=n)
+        elif design == "sampford":
+            return Sampford(N= N, n= n)
     #
     @cache
     def get_πi(self):

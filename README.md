@@ -24,26 +24,6 @@ The project focuses on identifying **underrepresented and overrepresented popula
 
 ---
 
-## Repository Structure
-
-```text
-Population-Detection-and-Sampling-in-Liguria/
-│
-├── README.md
-│
-├── Simulation/
-│   ├── Simulation.py
-│   ├── sampling.py
-│   ├── optimal_cost_allocation.py
-│   ├── Plots.py
-│   ├── Comparisions_plots_MFS.ipynb
-│   ├── Data_Visualization.ipynb
-│   ├── PytonScripts.zip
-│   ├── PseudoCode_Instructions.zip
-│   └── __pycache__/
-│
-└── .git/
-
 ## Folder Description
 
 ### Simulation
@@ -95,4 +75,27 @@ The project is implemented in **Python 3.x** and relies on the following librari
 - `matplotlib`  
 - `seaborn`  
 - `jupyter`
+
+## Repository Structure
+
+```text
+Population-Detection-and-Sampling-in-Liguria/
+│
+├── README.md
+│
+├── Simulation/
+│   ├── Simulation.py
+│   ├── sampling.py
+│   ├── optimal_cost_allocation.py
+│   ├── Plots.py
+│   ├── Comparisions_plots_MFS.ipynb
+│   ├── Data_Visualization.ipynb
+│   ├── PytonScripts.zip
+│   ├── PseudoCode_Instructions.zip
+│   └── __pycache__/
+│
+└── .git/
+```
+---
+
 

@@ -55,7 +55,7 @@ This folder contains the core metodological and computation to investigate the u
 - **Outlier_Detection_EUSILC.py**
 Function and python classes to train and validate the outlier detection models developed (both univariate and multivariate)
 
-- ** Example_Investigation_Underrepresented_Groups.ipynb**
+- **Example_Investigation_Underrepresented_Groups.ipynb**
 Notebook providin an illustrative example of outlioer detection analysis to search for under represented groups
 
 #### Supplementary Files
